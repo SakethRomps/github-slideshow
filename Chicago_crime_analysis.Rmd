@@ -1,0 +1,134 @@
+---
+title: "Chicago Crime Analysis"
+output:
+  word_document: default
+  html_document: default
+---
+```{r}
+library(dplyr)
+library(ggplot2)
+library(forecast)
+library(stringr)
+library(lubridate)
+
+crime_data <- read.csv("Crimes_-_One_year_prior_to_present.csv", sep= ",", stringsAsFactors = FALSE)
+crime_data <- crime_data[-c(4,10,12:14,17:19,21:23)]
+crime_data$DATE..OF.OCCURRENCE = as.Date(crime_data$DATE..OF.OCCURRENCE, format = "%m/%d/%Y %I:%M:%S %p")
+type_of_crime <- summarise(group_by(crime_data,PRIMARY.DESCRIPTION), count= n())
+ggplot(type_of_crime, aes(x= reorder(PRIMARY.DESCRIPTION,count), y= count))+ geom_bar(stat= "identity",color= "black", fill= "light blue")+ coord_flip()+ ggtitle("Most Crimes Recorded")
+
+#write.table(crime_data, file="crime_data.csv",sep=",",row.names=F)
+```
+```{r}
+theft <- filter(crime_data, PRIMARY.DESCRIPTION== 'THEFT')
+type_of_theft <- summarise(group_by(theft, SECONDARY.DESCRIPTION), count= n())
+
+ggplot(type_of_theft, aes(x= reorder(SECONDARY.DESCRIPTION, count), y= count))+ geom_bar(stat='identity', color= "black", fill= "light blue")+ coord_flip()+ xlab('Type of Theft')+ ggtitle("Most Common type of Thefts")
+```
+
+```{r}
+weapons_crime <- filter(crime_data, PRIMARY.DESCRIPTION== 'WEAPONS VIOLATION')
+weapons_crime_by_area <- summarise(group_by(weapons_crime, Community.Areas), count= n())
+```
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(treemap)
+treemap_df <-
+  crime_data %>%
+  group_by(PRIMARY.DESCRIPTION, SECONDARY.DESCRIPTION) %>%
+  summarize(n = n())
+
+treemap(treemap_df, 
+        index=c("PRIMARY.DESCRIPTION","SECONDARY.DESCRIPTION"), 
+        vSize="n", 
+        type="index",
+        fontsize.labels=c(15,12),
+        fontcolor.labels=c("white","orange"),
+        fontface.labels=c(2,1), 
+        bg.labels=c("transparent"),
+        align.labels=list(
+          c("center", "center"), 
+          c("center", "top")
+        ),                                 
+        overlap.labels=0.2,                     
+        inflate.labels=F
+      )
+```
+
+```{r}
+library(stringr)
+crime_data$new_block <- substr(crime_data$BLOCK, start = 8, stop = str_count(crime_data$BLOCK))
+
+crime_by_area <- summarise(group_by(crime_data, new_block), count= n())
+```
+
+```{r}
+crime_for_community <- na.omit(crime_data, cols=crime_data$Community.Areas)
+crime_by_community_area<- summarise(group_by(crime_for_community, Community.Areas), count= n())
+crime_by_community_area <- top_n(crime_by_community_area,40)
+avg <- 3334.00
+ggplot(crime_by_community_area, aes(x= reorder(Community.Areas, count), y=count))+ geom_bar(stat= 'identity', color= "black", fill= "light blue") +geom_hline(aes(yintercept=avg)) + theme(axis.text.x = element_text(angle = 90))+ xlab('Community Area')+ ylab('Number of Recorded Cases')+ ggtitle("Crime By Community Area")
+```
+
+```{r}
+arrests <- filter(crime_data, ARREST== 'Y')
+arrests_by_crime <- summarise(group_by(arrests,PRIMARY.DESCRIPTION), count=n())
+
+ggplot(type_of_crime, aes(x=reorder(PRIMARY.DESCRIPTION, count), y= count))+ geom_bar(stat= 'identity', color= "black", fill= "light blue")+ coord_flip()+ xlab('Type of Crime')+ ggtitle("Most Crimes Recorded")
+
+ggplot(arrests_by_crime, aes(x=reorder(PRIMARY.DESCRIPTION, count), y= count))+ geom_bar(stat= 'identity', color= "black", fill= "light blue")+ coord_flip()+ xlab('Type of Crime')+ ggtitle("Most Arrests by Crime")
+
+```
+
+```{r}
+top_crime_recorded <- top_n(type_of_crime,4)
+top_arrests_recorded <- top_n(arrests_by_crime,4)
+
+slices <- c(top_arrests_recorded$count)
+lbls <- c(top_arrests_recorded$PRIMARY.DESCRIPTION)
+pct <- round(slices/sum(slices)*100)
+lbls1 <- paste(lbls,"- ", pct,"%", sep="")
+pie(slices, labels = lbls1, main="Most Arrests by Crime")
+
+
+slices <- c(top_crime_recorded$count)
+lbls <- c(top_crime_recorded$PRIMARY.DESCRIPTION)
+pct <- round(slices/sum(slices)*100)
+lbls1 <- paste(lbls,"- ", pct,"%", sep="")
+pie(slices, labels = lbls1, main="Most Crimes Recorded")
+```
+
+```{r}
+library(lubridate)
+crime_by_date <- summarise(group_by(crime_data, DATE..OF.OCCURRENCE), count= n())
+crime_by_date$month <- month(crime_by_date$DATE..OF.OCCURRENCE)
+crime_by_date$day <- as.Date(crime_by_date$DATE..OF.OCCURRENCE)
+crime_by_date$day <- wday(crime_by_date$day, label=TRUE)
+
+ggplot(crime_by_date, aes(x= month, y= day, fill= count))+ geom_tile() + ggtitle("Crimes variation by Month and Day of the Week")
+```
+
+```{r}
+crime_data_2011_2018 <- read.csv("Crimes_2011_2018.csv", sep= ",", stringsAsFactors = FALSE)
+crime_data_2011_2018 <- crime_data_2011_2018[-c(1,4:8,11:13,15:22)]
+crime_data_2011_2018$Date = as.Date(crime_data_2011_2018$Date, format = "%m/%d/%Y %I:%M:%S %p")
+crime_data_2011_2018$Year <- lubridate::year(crime_data_2011_2018$Date)
+crime_data_2011_2018$Month <- lubridate::month(crime_data_2011_2018$Date)
+crime_by_year <- summarise(group_by(crime_data_2011_2018, Year, Month), count=n())
+
+
+
+violent_ts <- ts(crime_by_year$count, start=c(2011, 1), end=c(2018, 12), frequency=12)    
+
+  ggseasonplot(violent_ts, year.labels=TRUE, year.labels.left=TRUE) +
+  ylab("Reported Incidents") +
+  ggtitle("Seasonal Plot of Crime Incidents")
+```
+
+```{r}
+ggplot(crime_by_year)+ aes(x= Month, y= count)+ geom_bar(stat= "identity", color= "black", fill= "light blue")+ ggtitle("Crime of Years")
+```
+
